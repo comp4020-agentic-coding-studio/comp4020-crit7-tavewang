@@ -152,13 +152,20 @@ force-opening (with the submitted note preserved) on a validation error; the
 list page's relative timestamps, "Showing N of M" count, and "Clear filters"
 link on an empty filtered result.
 
+Redeployed with the same `flyctl deploy --remote-only --ha=false` command
+against the existing app and volume — no new machine, no new volume, no
+database reset. Confirmed on the live URL afterwards: the ticket submitted
+during v1 verification ("Deploy verification ticket", `/tickets/1`) is still
+there and now renders with the new UI (`#0001`, the progress bar, "59 minutes
+ago" as a relative time, AEST-suffixed full dates on the detail page, the
+admin panel collapsed by default); the production database still has exactly
+that one real ticket and no `[Demo]`-prefixed rows, confirming `scripts/seed.ts`
+was never run against it.
+
 ## What's unfinished
 
-As of this pass, the round-two changes above are committed locally but not
-yet deployed — the live instance at `comp4020-crit7-tavewang.fly.dev` is
-still running the v1 build described in the first "Deployment" section.
-Redeploying with the existing `fly.toml`/Dockerfile and confirming the live
-data survives is the next step, not something skipped. Beyond that, the one
-thing I'd still do with more time is a second manual pass at both marking
-viewports against the live URL itself once it's redeployed, the same way the
-v1 pass was done against the local build.
+Nothing load-bearing. The one thing I'd still do with more time is a second
+manual pass at both marking viewports against the live URL itself with a
+browser (this pass verified the deployed HTML directly over HTTP, the same
+way v1's persistence was verified, but didn't repeat the visual/Playwright
+pass against `*.fly.dev` specifically).
