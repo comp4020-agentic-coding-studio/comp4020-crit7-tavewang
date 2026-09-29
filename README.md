@@ -32,11 +32,49 @@ asked for explicitly, not an oversight.
 Enforced automatically (see `spec/` and `pnpm check`): every route returns
 real HTML behind a landmark structure that passes an automated accessibility
 scan (axe-core, run against jsdom in `spec/invariants.test.ts`); ticket
-creation, filtering, search, status updates, and 404 handling all have
-contract tests (`spec/tickets.test.ts`) that hit the built server over HTTP,
-not mocks. Visual polish and the exact wording of empty/error states were
-judgement calls, checked by eye at both marking viewports rather than by an
-automated test.
+creation, filtering, search, status updates, reopening a resolved ticket, the
+similar-tickets API, and 404 handling all have contract tests
+(`spec/tickets.test.ts`) that hit the built server over HTTP, not mocks.
+Visual polish and the exact wording of empty/error states were judgement
+calls, checked by eye at both marking viewports rather than by an automated
+test.
+
+### Tracking and reporting improvements
+
+- **Progress bar + timeline.** The detail page shows a three-stage
+  Submitted → In progress → Resolved bar (`src/components/ProgressSteps.astro`)
+  with a text state label on every step ("Done" / "Current" / "Not yet") —
+  never colour alone. The History list under it is the same event log as
+  before, now with full explicit-timezone timestamps
+  (`src/lib/format.ts`, `Australia/Sydney`) and a ticket number (`#0007`
+  style). Reopening a resolved ticket is allowed (the existing
+  `updateTicketStatus` transaction already permits any status transition) and
+  is called out with a "Reopened" tag on the timeline entry that follows a
+  resolved one.
+- **Searchable building list.** The report form's location field is a native
+  `<input list>` + `<datalist>` (`src/lib/buildings.ts`) seeded with real,
+  independently-verified ANU Acton buildings. It's a suggestion list, not a
+  constraint — the field stays free text, so "Other location" is just typing
+  something not on the list, and no schema or migration change was needed.
+- **Similar-open-ticket prompts.** After picking a building and category on
+  the report form, a small script calls a new read-only endpoint
+  (`GET /api/similar-tickets.json`) that runs one explainable SQL rule — same
+  location, same category, status not resolved, newest five — and lists any
+  matches inline, without navigating away or losing what's already typed.
+  Links open in a new tab as a second safeguard against losing form state.
+- **Demo admin panel, collapsed by default.** The status-update form on each
+  ticket is now a native `<details>`/`<summary>` ("Demo admin controls"),
+  closed on first load so the ticket's own content and progress are what a
+  visitor sees first; it force-opens if a status-update submission comes back
+  with a validation error, and both the status select and the note field now
+  preserve what was submitted rather than resetting.
+- **Copy and list polish.** Removed the "no photo upload yet either" aside;
+  added description helper text asking for exact location, what's broken, and
+  when it was noticed; ticket-list timestamps are now relative
+  ("3 days ago") while the detail page keeps the full explicit-timezone date;
+  the list page distinguishes total ticket counts from a filtered result
+  count ("Showing 1 of 8 total tickets"), and the empty-filtered-state message
+  includes a direct "Clear filters" link back to the unfiltered list.
 
 ## Running it locally
 

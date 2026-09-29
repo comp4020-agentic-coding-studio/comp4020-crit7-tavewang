@@ -1,5 +1,6 @@
 ---
 import SiteNav from "../components/SiteNav.astro";
+import { ANU_BUILDINGS } from "../lib/buildings";
 import { createTicket } from "../lib/db";
 import { CATEGORY_LABELS } from "../lib/labels";
 import { TICKET_CATEGORIES, type TicketCategory } from "../lib/schema";
@@ -63,10 +64,7 @@ if (Astro.request.method === "POST") {
     <SiteNav />
     <main>
       <h1>Report an issue</h1>
-      <p>
-        No account or personal details needed for this prototype — just describe the problem.
-        There's no photo upload yet either.
-      </p>
+      <p>No account or personal details needed for this prototype — just describe the problem.</p>
       <form method="post" action="/report" novalidate>
         <div class="field">
           <label for="title">Title</label>
@@ -76,7 +74,23 @@ if (Astro.request.method === "POST") {
 
         <div class="field">
           <label for="location">Building / location</label>
-          <input id="location" name="location" required maxlength={MAX_LOCATION} value={values.location} placeholder="e.g. Hanna Neumann Building" aria-describedby={errors.location ? "location-error" : undefined} aria-invalid={errors.location ? "true" : undefined} />
+          <input
+            id="location"
+            name="location"
+            list="anu-buildings"
+            required
+            maxlength={MAX_LOCATION}
+            value={values.location}
+            placeholder="Start typing a building name…"
+            aria-describedby={`location-hint${errors.location ? " location-error" : ""}`}
+            aria-invalid={errors.location ? "true" : undefined}
+          />
+          <datalist id="anu-buildings">
+            {ANU_BUILDINGS.map((building) => <option value={building} />)}
+          </datalist>
+          <p class="field-hint" id="location-hint">
+            Pick a common building from the list, or type your own if it's not there.
+          </p>
           {errors.location && <p class="field-error" id="location-error">{errors.location}</p>}
         </div>
 
@@ -101,9 +115,14 @@ if (Astro.request.method === "POST") {
           {errors.category && <p class="field-error" id="category-error">{errors.category}</p>}
         </div>
 
+        <div id="similar-tickets" class="similar-tickets" role="status" hidden></div>
+
         <div class="field">
           <label for="description">Detailed description</label>
-          <textarea id="description" name="description" required rows="5" maxlength={MAX_DESCRIPTION} aria-describedby={errors.description ? "description-error" : undefined} aria-invalid={errors.description ? "true" : undefined}>{values.description}</textarea>
+          <p class="field-hint" id="description-hint">
+            Include the exact location, what is broken, and when you noticed it.
+          </p>
+          <textarea id="description" name="description" required rows="5" maxlength={MAX_DESCRIPTION} aria-describedby={`description-hint${errors.description ? " description-error" : ""}`} aria-invalid={errors.description ? "true" : undefined}>{values.description}</textarea>
           {errors.description && <p class="field-error" id="description-error">{errors.description}</p>}
         </div>
 
@@ -122,6 +141,75 @@ if (Astro.request.method === "POST") {
           button.textContent = "Submitting…";
         }
       });
+    </script>
+    <script>
+      // Progressive enhancement: fetches a same-place, same-kind, still-open
+      // tickets list as the user fills in location + category, so they can
+      // spot a likely duplicate before submitting. Never navigates away —
+      // any suggested link opens in a new tab — so a filled-in form is never
+      // at risk of being lost just from checking this list.
+      const locationInput = document.querySelector<HTMLInputElement>("#location");
+      const categorySelect = document.querySelector<HTMLSelectElement>("#category");
+      const box = document.querySelector<HTMLDivElement>("#similar-tickets");
+
+      let controller: AbortController | null = null;
+
+      async function checkSimilar() {
+        if (!locationInput || !categorySelect || !box) return;
+        const location = locationInput.value.trim();
+        const category = categorySelect.value;
+
+        if (!location || !category) {
+          box.hidden = true;
+          box.innerHTML = "";
+          return;
+        }
+
+        controller?.abort();
+        controller = new AbortController();
+
+        try {
+          const res = await fetch(
+            `/api/similar-tickets.json?location=${encodeURIComponent(location)}&category=${encodeURIComponent(category)}`,
+            { signal: controller.signal },
+          );
+          if (!res.ok) return;
+          const data = await res.json();
+          const items: Array<{ id: number; title: string; statusLabel: string }> = data.tickets ?? [];
+
+          if (items.length === 0) {
+            box.hidden = true;
+            box.innerHTML = "";
+            return;
+          }
+
+          box.hidden = false;
+          box.innerHTML = `
+            <p class="similar-tickets-heading">
+              ${items.length} existing open ticket${items.length === 1 ? "" : "s"} for this building and category — check before filing a new one:
+            </p>
+            <ul>
+              ${items
+                .map(
+                  (item) =>
+                    `<li><a href="/tickets/${item.id}" target="_blank" rel="noopener">${escapeHtml(item.title)}</a> — ${escapeHtml(item.statusLabel)}</li>`,
+                )
+                .join("")}
+            </ul>
+          `;
+        } catch (err) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+        }
+      }
+
+      function escapeHtml(value: string) {
+        const div = document.createElement("div");
+        div.textContent = value;
+        return div.innerHTML;
+      }
+
+      locationInput?.addEventListener("change", checkSimilar);
+      categorySelect?.addEventListener("change", checkSimilar);
     </script>
   </body>
 </html>

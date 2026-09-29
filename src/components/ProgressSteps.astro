@@ -1,0 +1,27 @@
+---
+import { STATUS_LABELS } from "../lib/labels";
+import { TICKET_STATUSES, type TicketStatus } from "../lib/schema";
+
+interface Props {
+  status: TicketStatus;
+}
+
+const { status } = Astro.props;
+const currentIndex = TICKET_STATUSES.indexOf(status);
+---
+
+<ol class="progress-steps" aria-label="ticket progress">
+  {
+    TICKET_STATUSES.map((step, index) => {
+      const state = index < currentIndex ? "done" : index === currentIndex ? "current" : "upcoming";
+      return (
+        <li class={`progress-step progress-step--${state}`} aria-current={state === "current" ? "step" : undefined}>
+          <span class="progress-step-label">{STATUS_LABELS[step as TicketStatus]}</span>
+          <span class="progress-step-state">
+            {state === "done" ? "Done" : state === "current" ? "Current" : "Not yet"}
+          </span>
+        </li>
+      );
+    })
+  }
+</ol>

@@ -89,10 +89,76 @@ worth recording:
   genuinely empty and grows only from real submissions — which is the
   correct behaviour for a production instance, not a gap.
 
+## Round two: tracking UX, demo data, and copy polish
+
+A second pass added six things on top of the shipped v1: a bigger, more
+realistic demo seed; a progress bar, ticket number, and a labelled "Reopened"
+timeline entry on the detail page; a searchable-but-still-free-text building
+field on the report form; a similar-open-tickets prompt driven by one
+explainable SQL rule; a set of copy fixes on the list and form pages; and the
+demo admin panel collapsed by default behind a native `<details>`. All of it
+built on infrastructure (`src/lib/format.ts`, `src/lib/buildings.ts`,
+`src/components/ProgressSteps.astro`, `src/pages/api/similar-tickets.json.ts`)
+that existed before this pass but wasn't wired into any page yet — this round
+was mostly that wiring, plus the seed rewrite.
+
+**Two real bugs, both caught by running checks rather than by reading code.**
+
+- `pnpm test`'s server-boot step failed outright with
+  `TypeError: Invalid option : option`. Manually running the built server
+  against a scratch database and reading stderr traced it to
+  `new Intl.DateTimeFormat(...)` in `src/lib/format.ts`: the spec rejects
+  combining `dateStyle`/`timeStyle` with `timeZoneName` in the same options
+  object, and the full-date formatter was doing exactly that. This would have
+  crashed every ticket-detail page and the homepage in production. Fixed by
+  building the same "long date, short time, explicit zone" look from
+  individual components (`year`, `month`, `day`, `hour`, `minute`,
+  `timeZoneName`) instead of the style shortcuts — confirmed with a direct
+  `node -e` reproduction before and after.
+- Screenshotting the mobile viewport with `chrome --headless --screenshot
+  --window-size=390,844` showed what looked like real overflow: clipped hero
+  text, a stat box cut off, a status badge running off the edge. Before
+  filing that as an app bug, I built a one-page test harness that reports
+  `window.innerWidth`/`innerHeight` back visually, and it showed Chrome's
+  headless screenshot mode was silently floor-ing the window to ~500px wide
+  no matter what `--window-size` asked for — which happened to land just
+  above this app's 480px mobile breakpoint, so the mobile CSS never even
+  applied. The fix was to stop trusting the CLI flag and drive Chrome
+  directly over the DevTools Protocol instead (a small Node script opens a
+  raw WebSocket to a `--remote-debugging-port` Chrome, calls
+  `Emulation.setDeviceMetricsOverride` with the real 390×844 metrics, then
+  navigates and captures), which the same test harness confirmed was
+  reporting the correct viewport. Re-shot the actual pages at a true 390×844
+  and the app was fine all along — a testing-tool bug, not a product one, but
+  one I wouldn't have caught without checking the tool's own output first.
+
+**Test coverage added**, not just manual checks: reopening a resolved ticket
+(status flips back, "Reopened" label and the reopen note both appear), and
+three cases for the similar-tickets endpoint (a real match, a resolved ticket
+correctly excluded, an unknown category returning an empty list rather than
+erroring). `pnpm check` — typecheck, build, and the full test suite including
+axe-core against every route, run against the new markup (`<details>`,
+`<datalist>`, the progress list, the reopened tag) — passes clean at 46
+tests, up from 42.
+
+**Manual verification** was against an isolated database in a throwaway
+`mkdtemp` directory, never the dev or production one, confirming: the seed
+script's idempotency (second run adds nothing); ticket-number and progress-bar
+rendering; the reopened tag appearing exactly on the event after a resolved
+one; the datalist offering real ANU buildings while still accepting free
+text; the similar-tickets box appearing/disappearing correctly and never
+losing in-progress form input; the admin panel starting collapsed and
+force-opening (with the submitted note preserved) on a validation error; the
+list page's relative timestamps, "Showing N of M" count, and "Clear filters"
+link on an empty filtered result.
+
 ## What's unfinished
 
-Nothing load-bearing. The one thing I'd still do with more time is a second
-manual pass at both marking viewports against the live URL itself (I did
-this against the local build during development, and confirmed the deployed
-instance serves correct HTML and persists data over HTTP, but didn't re-run
-the full Playwright visual pass against `*.fly.dev` specifically).
+As of this pass, the round-two changes above are committed locally but not
+yet deployed — the live instance at `comp4020-crit7-tavewang.fly.dev` is
+still running the v1 build described in the first "Deployment" section.
+Redeploying with the existing `fly.toml`/Dockerfile and confirming the live
+data survives is the next step, not something skipped. Beyond that, the one
+thing I'd still do with more time is a second manual pass at both marking
+viewports against the live URL itself once it's redeployed, the same way the
+v1 pass was done against the local build.

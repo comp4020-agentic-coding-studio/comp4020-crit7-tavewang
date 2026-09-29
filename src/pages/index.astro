@@ -2,6 +2,7 @@
 import SiteNav from "../components/SiteNav.astro";
 import StatusBadge from "../components/StatusBadge.astro";
 import { countTicketsByStatus, listTickets } from "../lib/db";
+import { formatRelativeTime } from "../lib/format";
 import { CATEGORY_LABELS, STATUS_LABELS } from "../lib/labels";
 import { TICKET_CATEGORIES, TICKET_STATUSES, type TicketCategory, type TicketStatus } from "../lib/schema";
 import "../styles.css";
@@ -15,6 +16,8 @@ const status = TICKET_STATUSES.includes(statusParam as TicketStatus) ? (statusPa
 const category = TICKET_CATEGORIES.includes(categoryParam as TicketCategory)
   ? (categoryParam as TicketCategory)
   : undefined;
+
+const hasFilters = Boolean(status || category || search);
 
 const counts = countTicketsByStatus();
 const total = counts.submitted + counts.in_progress + counts.resolved;
@@ -88,17 +91,30 @@ const tickets = listTickets({ status, category, search: search || undefined });
             </select>
           </div>
           <button class="button" type="submit">Apply</button>
-          {(status || category || search) && <a class="button-link" href="/">Clear</a>}
+          {hasFilters && <a class="button-link" href="/">Clear</a>}
         </form>
       </section>
 
       <section aria-label="ticket list">
         {
+          hasFilters && tickets.length > 0 && (
+            <p class="result-count">
+              Showing {tickets.length} of {total} total tickets for these filters.
+            </p>
+          )
+        }
+        {
           tickets.length === 0 ? (
             <p class="empty-state">
-              {total === 0
-                ? "No tickets yet — be the first to report an issue."
-                : "No tickets match those filters."}
+              {total === 0 ? (
+                "No tickets yet — be the first to report an issue."
+              ) : hasFilters ? (
+                <>
+                  No tickets match those filters. <a href="/">Clear filters</a> to see all {total} tickets.
+                </>
+              ) : (
+                "No tickets match those filters."
+              )}
             </p>
           ) : (
             <ul class="ticket-list">
@@ -110,7 +126,7 @@ const tickets = listTickets({ status, category, search: search || undefined });
                   <div class="ticket-meta">
                     <span>{ticket.location}{ticket.room ? ` · Room ${ticket.room}` : ""}</span>
                     <span>{CATEGORY_LABELS[ticket.category as TicketCategory]}</span>
-                    <span>{new Date(ticket.createdAt).toLocaleString("en-AU")}</span>
+                    <span>{formatRelativeTime(ticket.createdAt)}</span>
                   </div>
                   <StatusBadge status={ticket.status as TicketStatus} />
                 </li>

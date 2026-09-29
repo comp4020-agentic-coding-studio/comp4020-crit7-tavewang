@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { and, desc, eq, like, or } from "drizzle-orm";
+import { and, desc, eq, like, ne, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import {
@@ -70,6 +70,30 @@ export function getTicketEvents(ticketId: number): TicketEvent[] {
     .from(ticketEvents)
     .where(eq(ticketEvents.ticketId, ticketId))
     .orderBy(ticketEvents.id)
+    .all();
+}
+
+// A same-place, same-kind, still-open ticket is worth surfacing to someone
+// about to file a duplicate — deliberately just an exact match on location
+// and category, not fuzzy matching or a search service: a rule the report
+// page's helper text can state outright, rather than one that needs
+// explaining after the fact.
+export function listOpenTicketsByLocationAndCategory(
+  location: string,
+  category: TicketCategory,
+): Ticket[] {
+  return db
+    .select()
+    .from(tickets)
+    .where(
+      and(
+        eq(tickets.location, location),
+        eq(tickets.category, category),
+        ne(tickets.status, "resolved"),
+      ),
+    )
+    .orderBy(desc(tickets.createdAt))
+    .limit(5)
     .all();
 }
 

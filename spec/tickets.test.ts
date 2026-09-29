@@ -132,6 +132,72 @@ describe("demo admin status updates", () => {
   });
 });
 
+describe("reopening a resolved ticket", () => {
+  it("allows moving a resolved ticket back to in_progress and labels it Reopened", async () => {
+    const path = await createTicket({ title: "Reopen check ticket" });
+
+    const resolve = await post(path, { status: "resolved", note: "Fixed it." });
+    expect(resolve.status).toBe(303);
+
+    const reopen = await post(path, { status: "in_progress", note: "Broke again." });
+    expect(reopen.status).toBe(303);
+
+    const html = await (await fetch(new URL(path, baseUrl))).text();
+    expect(html).toContain("Reopened");
+    expect(html).toContain("Broke again.");
+  });
+});
+
+describe("similar open tickets", () => {
+  it("suggests an existing unresolved ticket at the same location and category", async () => {
+    const marker = Math.random().toString(36).slice(2);
+    const location = `Similar Test Building ${marker}`;
+    await createTicket({ title: `First light issue ${marker}`, location, category: "lighting" });
+
+    const res = await fetch(
+      new URL(
+        `/api/similar-tickets.json?location=${encodeURIComponent(location)}&category=lighting`,
+        baseUrl,
+      ),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.tickets).toHaveLength(1);
+    expect(data.tickets[0].title).toBe(`First light issue ${marker}`);
+    expect(data.tickets[0].statusLabel).toBe("Submitted");
+  });
+
+  it("excludes resolved tickets and unrelated categories", async () => {
+    const marker = Math.random().toString(36).slice(2);
+    const location = `Similar Test Building 2 ${marker}`;
+    const resolvedPath = await createTicket({
+      title: `Resolved plumbing ${marker}`,
+      location,
+      category: "plumbing",
+    });
+    await post(resolvedPath, { status: "resolved", note: "Fixed." });
+    await createTicket({ title: `Different category ${marker}`, location, category: "furniture" });
+
+    const res = await fetch(
+      new URL(
+        `/api/similar-tickets.json?location=${encodeURIComponent(location)}&category=plumbing`,
+        baseUrl,
+      ),
+    );
+    const data = await res.json();
+    expect(data.tickets).toHaveLength(0);
+  });
+
+  it("returns an empty list for a missing or invalid category", async () => {
+    const res = await fetch(
+      new URL("/api/similar-tickets.json?location=Somewhere&category=not-real", baseUrl),
+    );
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.tickets).toEqual([]);
+  });
+});
+
 describe("nonexistent tickets", () => {
   it("responds 404 for an unknown ticket id", async () => {
     const res = await fetch(new URL("/tickets/999999", baseUrl));

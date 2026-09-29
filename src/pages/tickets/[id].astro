@@ -1,6 +1,8 @@
 ---
+import ProgressSteps from "../../components/ProgressSteps.astro";
 import SiteNav from "../../components/SiteNav.astro";
 import StatusBadge from "../../components/StatusBadge.astro";
+import { formatFullDateTime, formatTicketNumber } from "../../lib/format";
 import { getTicket, getTicketEvents, updateTicketStatus } from "../../lib/db";
 import { CATEGORY_LABELS, STATUS_LABELS } from "../../lib/labels";
 import { TICKET_STATUSES, type TicketCategory, type TicketStatus } from "../../lib/schema";
@@ -13,11 +15,15 @@ const id = Number(idParam);
 const validId = Boolean(idParam) && Number.isInteger(id) && id >= 1;
 
 let statusError: string | null = null;
+let statusValue: string | null = null;
+let noteValue = "";
 
 if (validId && Astro.request.method === "POST") {
   const form = await Astro.request.formData();
   const nextStatus = String(form.get("status") ?? "");
   const note = String(form.get("note") ?? "").trim();
+  statusValue = nextStatus;
+  noteValue = note;
 
   if (!TICKET_STATUSES.includes(nextStatus as TicketStatus)) {
     statusError = "Choose a valid status.";
@@ -39,6 +45,16 @@ if (!ticket) {
 }
 
 const events = ticket ? getTicketEvents(ticket.id) : [];
+
+// An event counts as "reopened" when it moves the ticket to a non-resolved
+// status right after a prior event had marked it resolved — worth calling
+// out explicitly in the timeline rather than looking like an ordinary update.
+const reopenedEventIds = new Set<number>();
+for (let i = 1; i < events.length; i++) {
+  if (events[i - 1].status === "resolved" && events[i].status !== "resolved") {
+    reopenedEventIds.add(events[i].id);
+  }
+}
 ---
 
 <!doctype html>
@@ -63,9 +79,12 @@ const events = ticket ? getTicketEvents(ticket.id) : [];
           <>
             <article class="ticket-detail">
               <header>
+                <p class="ticket-number">{formatTicketNumber(ticket.id)}</p>
                 <h1>{ticket.title}</h1>
                 <StatusBadge status={ticket.status as TicketStatus} />
               </header>
+
+              <ProgressSteps status={ticket.status as TicketStatus} />
 
               <dl class="ticket-facts">
                 <div>
@@ -78,11 +97,11 @@ const events = ticket ? getTicketEvents(ticket.id) : [];
                 </div>
                 <div>
                   <dt>Reported</dt>
-                  <dd>{new Date(ticket.createdAt).toLocaleString("en-AU")}</dd>
+                  <dd>{formatFullDateTime(ticket.createdAt)}</dd>
                 </div>
                 <div>
                   <dt>Last updated</dt>
-                  <dd>{new Date(ticket.updatedAt).toLocaleString("en-AU")}</dd>
+                  <dd>{formatFullDateTime(ticket.updatedAt)}</dd>
                 </div>
               </dl>
 
@@ -98,7 +117,8 @@ const events = ticket ? getTicketEvents(ticket.id) : [];
                     {events.map((event) => (
                       <li>
                         <StatusBadge status={event.status as TicketStatus} />
-                        <time datetime={event.createdAt}>{new Date(event.createdAt).toLocaleString("en-AU")}</time>
+                        {reopenedEventIds.has(event.id) && <span class="reopened-tag">Reopened</span>}
+                        <time datetime={event.createdAt}>{formatFullDateTime(event.createdAt)}</time>
                         {event.note && <p class="event-note">{event.note}</p>}
                       </li>
                     ))}
@@ -107,9 +127,9 @@ const events = ticket ? getTicketEvents(ticket.id) : [];
               }
             </article>
 
-            <section class="admin-panel" aria-label="demo admin controls">
-              <h2>Demo admin</h2>
-              <p>
+            <details class="admin-panel" open={Boolean(statusError)}>
+              <summary>Demo admin controls</summary>
+              <p class="admin-disclaimer">
                 This panel is a stand-in for real staff tooling — anyone can open it in this
                 prototype. It is <strong>not</strong> access control, and there is no real
                 maintenance team behind it.
@@ -120,7 +140,7 @@ const events = ticket ? getTicketEvents(ticket.id) : [];
                   <select id="status" name="status" aria-describedby={statusError ? "status-error" : undefined} aria-invalid={statusError ? "true" : undefined}>
                     {
                       TICKET_STATUSES.map((s) => (
-                        <option value={s} selected={s === ticket.status}>
+                        <option value={s} selected={s === (statusValue ?? ticket.status)}>
                           {STATUS_LABELS[s]}
                         </option>
                       ))
@@ -130,11 +150,11 @@ const events = ticket ? getTicketEvents(ticket.id) : [];
                 </div>
                 <div class="field">
                   <label for="note">Processing note <span class="optional">(optional)</span></label>
-                  <textarea id="note" name="note" rows="3" maxlength={MAX_NOTE}></textarea>
+                  <textarea id="note" name="note" rows="3" maxlength={MAX_NOTE}>{noteValue}</textarea>
                 </div>
                 <button class="button button-primary" type="submit">Save update</button>
               </form>
-            </section>
+            </details>
           </>
         )
       }
