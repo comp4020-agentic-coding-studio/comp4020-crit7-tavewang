@@ -65,7 +65,8 @@ Before pushing, run `pnpm check` (typecheck + build + the full test suite).
 
 ## Deployment
 
-Deploys to Fly.io with a persistent volume mounted so `DATABASE_PATH` points
-at durable storage rather than the container's ephemeral filesystem — see
-`fly.toml`. This prototype has not yet been deployed at the time of writing;
-`PROCESS.md` says why.
+Live at **https://comp4020-crit7-tavewang.fly.dev/**. Deploys to Fly.io with a
+persistent volume mounted so `DATABASE_PATH` points at durable storage rather
+than the container's ephemeral filesystem — see `fly.toml`. Verified after
+deploying: a ticket submitted directly against the live URL was still there
+on a later, separate request.

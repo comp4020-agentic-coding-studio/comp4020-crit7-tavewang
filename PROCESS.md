@@ -69,10 +69,30 @@ restarted it against the same database file to confirm a ticket created in
 the browser was still there — the specific guarantee the brief asked for
 that no in-process test can actually exercise.
 
+## Deployment
+
+Deployed to Fly.io (`comp4020-crit7-tavewang.fly.dev`) with
+`flyctl deploy --remote-only --ha=false -a comp4020-crit7-tavewang`, using the
+volume mount and `DATABASE_PATH` already set up in `fly.toml`. Two things
+worth recording:
+
+- The deploy log printed a one-off warning about the app not listening on
+  `0.0.0.0:4321` yet — a cold-start timing artefact from the machine still
+  booting when the check ran, not a real problem: the app answered `200`
+  seconds later and stayed up.
+- I verified persistence on the live instance the same way as locally, but
+  for real this time: submitted a ticket straight to the deployed URL over
+  HTTP, then fetched its detail page in a separate request, and the ticket
+  was there. `scripts/seed.ts` isn't in the deploy image (it's a local dev
+  convenience, not something that belongs in the production container per
+  the brief's "must not reset data" constraint), so the live database starts
+  genuinely empty and grows only from real submissions — which is the
+  correct behaviour for a production instance, not a gap.
+
 ## What's unfinished
 
-Deployment: `fly.toml` and the `Dockerfile` are set up for a Fly.io volume
-mount so `DATABASE_PATH` points at durable storage, but no deploy has been
-run against this repo's own Fly app — I don't yet have a deploy token scoped
-to this specific app, so `pnpm dev` against the local SQLite file is the only
-environment this has run in so far.
+Nothing load-bearing. The one thing I'd still do with more time is a second
+manual pass at both marking viewports against the live URL itself (I did
+this against the local build during development, and confirmed the deployed
+instance serves correct HTML and persists data over HTTP, but didn't re-run
+the full Playwright visual pass against `*.fly.dev` specifically).
