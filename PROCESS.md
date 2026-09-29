@@ -1,54 +1,78 @@
 # Process overview
 
-<!-- TEMPLATE: this file is a shape to fill in, not a form. Replace everything
-     in it with your own overview, and delete this comment — `pnpm
-     check:evidence` will remind you if it's still here. -->
-
-Written by you, for a reader: how you got from the brief to the harness and
-agentic workflow behind this submission. Markers read this file and follow its
-citations; they don't trawl the repo for evidence you didn't point at.
-
-This file is the shape; the course site's
-[assessment page](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#what-you-submit)
-is the requirement, and its
-[word counts](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#word-counts)
-cover every deliverable.
-
 ## What I built
 
-A sentence or two. `README.md` is where the account of what the app is and what
-good means here lives; this file is how you got there.
+ANU Fix, a campus facility repair tracker: report a broken light, tap, chair
+or aircon; watch it move through `submitted` → `in_progress` → `resolved`;
+read its full history. What it is and what "good" means for it is in
+`README.md`; this is how I got there.
 
 ## How I got here
 
-The account of the process: how the work actually went, and how you knew the
-result was right. Tell it in whatever order makes it clear. A weekly prototype
-needs a paragraph or two; an assignment needs more.
+The brief was specific enough to skip a separate design phase: minimal
+feature scope (list, report, detail+history, demo admin), a required stack
+(Astro + Drizzle + SQLite), and a hard constraint — every core write must
+survive a refresh and a restart, so no `localStorage`, no in-memory state.
+I started from the schema, since everything else (the DB layer, the pages,
+the tests) is downstream of it.
 
-Cite the record as you go, as links whose text is the commit hash or range and
-whose target is this repo's commit or compare URL, so a reader clicks straight
-to the evidence:
+**Schema and DB layer.** `tickets` and `ticket_events` are the two tables:
+one row per ticket, one row per event in its life (including the "submitted"
+event its own creation writes, so history is a query, not a reconstruction).
+`createTicket` and `updateTicketStatus` in `src/lib/db.ts` each wrap their
+insert/update *and* the event row they imply in a single `db.transaction`,
+so a ticket's status and its history can't drift apart even under a crash
+mid-write — the constraint the brief cared most about
+([`8a91bcd`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-tavewang/commit/8a91bcd6d376a0887178ab9b51ac4816cab60437)).
+Drizzle's newer array-form `extraConfig` (for indexes) replaced the
+deprecated object form once `astro check` flagged it as a hint, with no
+behaviour change.
 
-- one commit: [`a1b2c3d`](https://github.com/YOUR-ORG/YOUR-REPO/commit/a1b2c3d)
-- a range:
-  [`a1b2c3d...e4f5a6b`](https://github.com/YOUR-ORG/YOUR-REPO/compare/a1b2c3d...e4f5a6b)
+**Pages and components.** Astro's self-posting frontmatter (a page handles
+its own `POST`, validates, then either redisplays the form with field errors
+or issues a 303 redirect) covers `/report` and `/tickets/[id]` without a
+separate API route layer — there's no client state to synchronise and no
+JSON contract that would justify one. `src/pages/tickets/[id].astro` sets
+`Astro.response.status = 404` for an unknown or malformed id while still
+rendering a full, styled "not found" page, rather than an empty response
+([`22957fc`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit7-tavewang/commit/22957fc13c097da9dc45eb10dfec63834e562b72)).
 
-To pair a prompt with the commit it produced, quote the prompt (curated, not a
-full transcript) next to the citation:
+**Checks, and two real bugs they caught.** `spec/tickets.test.ts` hits the
+built server over real HTTP for the whole contract: create → persists across
+a refetch → first history event on creation → field-level validation errors
+→ filter/search → demo-admin status update visible in history → 404 for a
+missing or malformed id. Running it first caught two things worth recording:
 
-> the prompt, verbatim
+- Astro's `security.checkOrigin` was rejecting every test `POST` with a 403.
+  This wasn't an app bug — a real browser always sends a same-origin
+  `Origin` header — so the fix was in the test harness (send one), not the
+  app.
+- The shared axe-core accessibility pass failed a "region" rule on three
+  routes: the demo-mode banner sat as a sibling of `<nav>`, outside every
+  landmark. That one *was* a real bug — wrapping both in a `<header>` fixed
+  it, and it's the kind of thing that reads fine in the source and only
+  shows up once something actually renders the page.
 
-Screenshots are welcome where one carries the point better than a sentence does.
-Commit the file to this repo and link it with a **relative** path, which is what
-makes it render on GitHub: `![alt text](docs/before.png)`. Images don't count
-towards the word count and don't replace the citation.
+**Seeding.** `scripts/seed.ts` is a standalone script (Node 24's native TS
+stripping, no build step) rather than a route or a startup hook, per the
+brief's "must not reset data on every startup." It checks existing titles
+before inserting, so it's a no-op on a second run — verified against a
+scratch database and again against the real dev database.
 
-## Before you ship
+**Manual verification.** `pnpm check` is HTTP-level and DOM-level, not visual,
+so I drove the built app with Playwright at both marking viewports
+(1920×1080, 390×844): home, report form (empty and with validation errors),
+ticket detail after creation, after a reload, after a demo-admin status
+update, search-filtered list, the 404 page, and the readme page. Then,
+separately, I killed the dev server process outright (not just a reload) and
+restarted it against the same database file to confirm a ticket created in
+the browser was still there — the specific guarantee the brief asked for
+that no in-process test can actually exercise.
 
-`pnpm check:evidence` verifies that this comment is gone, that your citations
-resolve to real commits, that a crit week's reflection entry is in
-`reflections/`, and that your `CLAUDE.md` is there. It checks that your account
-is traceable, not that it is good: that is the marker's call.
+## What's unfinished
 
-Images aren't checked: unlike a citation whose SHA doesn't resolve, a broken
-image is visible the moment this file is rendered on GitHub.
+Deployment: `fly.toml` and the `Dockerfile` are set up for a Fly.io volume
+mount so `DATABASE_PATH` points at durable storage, but no deploy has been
+run against this repo's own Fly app — I don't yet have a deploy token scoped
+to this specific app, so `pnpm dev` against the local SQLite file is the only
+environment this has run in so far.
