@@ -1,0 +1,12 @@
+---
+import { STATUS_LABELS } from "../lib/labels";
+import type { TicketStatus } from "../lib/schema";
+
+interface Props {
+  status: TicketStatus;
+}
+
+const { status } = Astro.props;
+---
+
+<span class={`status-badge status-${status}`}>{STATUS_LABELS[status]}</span>

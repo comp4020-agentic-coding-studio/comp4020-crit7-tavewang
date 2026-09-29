@@ -1,0 +1,143 @@
+---
+import SiteNav from "../../components/SiteNav.astro";
+import StatusBadge from "../../components/StatusBadge.astro";
+import { getTicket, getTicketEvents, updateTicketStatus } from "../../lib/db";
+import { CATEGORY_LABELS, STATUS_LABELS } from "../../lib/labels";
+import { TICKET_STATUSES, type TicketCategory, type TicketStatus } from "../../lib/schema";
+import "../../styles.css";
+
+const MAX_NOTE = 1000;
+
+const idParam = Astro.params.id;
+const id = Number(idParam);
+const validId = Boolean(idParam) && Number.isInteger(id) && id >= 1;
+
+let statusError: string | null = null;
+
+if (validId && Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  const nextStatus = String(form.get("status") ?? "");
+  const note = String(form.get("note") ?? "").trim();
+
+  if (!TICKET_STATUSES.includes(nextStatus as TicketStatus)) {
+    statusError = "Choose a valid status.";
+  } else if (note.length > MAX_NOTE) {
+    statusError = `Note must be ${MAX_NOTE} characters or fewer.`;
+  } else {
+    const result = updateTicketStatus(id, nextStatus as TicketStatus, note || null);
+    if (result) {
+      return Astro.redirect(`/tickets/${id}`, 303);
+    }
+    statusError = "That ticket no longer exists.";
+  }
+}
+
+const ticket = validId ? getTicket(id) : undefined;
+
+if (!ticket) {
+  Astro.response.status = 404;
+}
+
+const events = ticket ? getTicketEvents(ticket.id) : [];
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{ticket ? `${ticket.title} — ANU Fix` : "Ticket not found — ANU Fix"}</title>
+  </head>
+  <body>
+    <SiteNav />
+    <main>
+      <a href="/" class="back-link">← All tickets</a>
+
+      {
+        !ticket ? (
+          <section class="empty-state">
+            <h1>Ticket not found</h1>
+            <p>There's no ticket at this address. It may have been removed, or the link is wrong.</p>
+          </section>
+        ) : (
+          <>
+            <article class="ticket-detail">
+              <header>
+                <h1>{ticket.title}</h1>
+                <StatusBadge status={ticket.status as TicketStatus} />
+              </header>
+
+              <dl class="ticket-facts">
+                <div>
+                  <dt>Location</dt>
+                  <dd>{ticket.location}{ticket.room ? ` · Room ${ticket.room}` : ""}</dd>
+                </div>
+                <div>
+                  <dt>Category</dt>
+                  <dd>{CATEGORY_LABELS[ticket.category as TicketCategory]}</dd>
+                </div>
+                <div>
+                  <dt>Reported</dt>
+                  <dd>{new Date(ticket.createdAt).toLocaleString("en-AU")}</dd>
+                </div>
+                <div>
+                  <dt>Last updated</dt>
+                  <dd>{new Date(ticket.updatedAt).toLocaleString("en-AU")}</dd>
+                </div>
+              </dl>
+
+              <h2>Description</h2>
+              <p class="ticket-description">{ticket.description}</p>
+
+              <h2>History</h2>
+              {
+                events.length === 0 ? (
+                  <p class="empty-state">No history yet.</p>
+                ) : (
+                  <ol class="event-history">
+                    {events.map((event) => (
+                      <li>
+                        <StatusBadge status={event.status as TicketStatus} />
+                        <time datetime={event.createdAt}>{new Date(event.createdAt).toLocaleString("en-AU")}</time>
+                        {event.note && <p class="event-note">{event.note}</p>}
+                      </li>
+                    ))}
+                  </ol>
+                )
+              }
+            </article>
+
+            <section class="admin-panel" aria-label="demo admin controls">
+              <h2>Demo admin</h2>
+              <p>
+                This panel is a stand-in for real staff tooling — anyone can open it in this
+                prototype. It is <strong>not</strong> access control, and there is no real
+                maintenance team behind it.
+              </p>
+              <form method="post" action={`/tickets/${ticket.id}`}>
+                <div class="field">
+                  <label for="status">Update status</label>
+                  <select id="status" name="status" aria-describedby={statusError ? "status-error" : undefined} aria-invalid={statusError ? "true" : undefined}>
+                    {
+                      TICKET_STATUSES.map((s) => (
+                        <option value={s} selected={s === ticket.status}>
+                          {STATUS_LABELS[s]}
+                        </option>
+                      ))
+                    }
+                  </select>
+                  {statusError && <p class="field-error" id="status-error">{statusError}</p>}
+                </div>
+                <div class="field">
+                  <label for="note">Processing note <span class="optional">(optional)</span></label>
+                  <textarea id="note" name="note" rows="3" maxlength={MAX_NOTE}></textarea>
+                </div>
+                <button class="button button-primary" type="submit">Save update</button>
+              </form>
+            </section>
+          </>
+        )
+      }
+    </main>
+  </body>
+</html>

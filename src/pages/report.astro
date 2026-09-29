@@ -1,0 +1,127 @@
+---
+import SiteNav from "../components/SiteNav.astro";
+import { createTicket } from "../lib/db";
+import { CATEGORY_LABELS } from "../lib/labels";
+import { TICKET_CATEGORIES, type TicketCategory } from "../lib/schema";
+import "../styles.css";
+
+const MAX_TITLE = 200;
+const MAX_LOCATION = 200;
+const MAX_ROOM = 50;
+const MAX_DESCRIPTION = 4000;
+
+let values = { title: "", location: "", room: "", category: "", description: "" };
+const errors: Partial<Record<keyof typeof values, string>> = {};
+
+if (Astro.request.method === "POST") {
+  const form = await Astro.request.formData();
+  values = {
+    title: String(form.get("title") ?? "").trim(),
+    location: String(form.get("location") ?? "").trim(),
+    room: String(form.get("room") ?? "").trim(),
+    category: String(form.get("category") ?? "").trim(),
+    description: String(form.get("description") ?? "").trim(),
+  };
+
+  if (!values.title) errors.title = "Title is required.";
+  else if (values.title.length > MAX_TITLE) errors.title = `Title must be ${MAX_TITLE} characters or fewer.`;
+
+  if (!values.location) errors.location = "Building or location is required.";
+  else if (values.location.length > MAX_LOCATION)
+    errors.location = `Location must be ${MAX_LOCATION} characters or fewer.`;
+
+  if (values.room.length > MAX_ROOM) errors.room = `Room must be ${MAX_ROOM} characters or fewer.`;
+
+  if (!TICKET_CATEGORIES.includes(values.category as TicketCategory))
+    errors.category = "Choose a category.";
+
+  if (!values.description) errors.description = "A detailed description is required.";
+  else if (values.description.length > MAX_DESCRIPTION)
+    errors.description = `Description must be ${MAX_DESCRIPTION} characters or fewer.`;
+
+  if (Object.keys(errors).length === 0) {
+    const ticket = createTicket({
+      title: values.title,
+      location: values.location,
+      room: values.room || null,
+      category: values.category as TicketCategory,
+      description: values.description,
+    });
+    return Astro.redirect(`/tickets/${ticket.id}`, 303);
+  }
+}
+---
+
+<!doctype html>
+<html lang="en-AU">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Report an issue — ANU Fix</title>
+  </head>
+  <body>
+    <SiteNav />
+    <main>
+      <h1>Report an issue</h1>
+      <p>
+        No account or personal details needed for this prototype — just describe the problem.
+        There's no photo upload yet either.
+      </p>
+      <form method="post" action="/report" novalidate>
+        <div class="field">
+          <label for="title">Title</label>
+          <input id="title" name="title" required maxlength={MAX_TITLE} value={values.title} aria-describedby={errors.title ? "title-error" : undefined} aria-invalid={errors.title ? "true" : undefined} />
+          {errors.title && <p class="field-error" id="title-error">{errors.title}</p>}
+        </div>
+
+        <div class="field">
+          <label for="location">Building / location</label>
+          <input id="location" name="location" required maxlength={MAX_LOCATION} value={values.location} placeholder="e.g. Hanna Neumann Building" aria-describedby={errors.location ? "location-error" : undefined} aria-invalid={errors.location ? "true" : undefined} />
+          {errors.location && <p class="field-error" id="location-error">{errors.location}</p>}
+        </div>
+
+        <div class="field">
+          <label for="room">Room number <span class="optional">(optional)</span></label>
+          <input id="room" name="room" maxlength={MAX_ROOM} value={values.room} aria-describedby={errors.room ? "room-error" : undefined} aria-invalid={errors.room ? "true" : undefined} />
+          {errors.room && <p class="field-error" id="room-error">{errors.room}</p>}
+        </div>
+
+        <div class="field">
+          <label for="category">Category</label>
+          <select id="category" name="category" required aria-describedby={errors.category ? "category-error" : undefined} aria-invalid={errors.category ? "true" : undefined}>
+            <option value="" disabled selected={!values.category}>Choose one</option>
+            {
+              TICKET_CATEGORIES.map((c) => (
+                <option value={c} selected={c === values.category}>
+                  {CATEGORY_LABELS[c]}
+                </option>
+              ))
+            }
+          </select>
+          {errors.category && <p class="field-error" id="category-error">{errors.category}</p>}
+        </div>
+
+        <div class="field">
+          <label for="description">Detailed description</label>
+          <textarea id="description" name="description" required rows="5" maxlength={MAX_DESCRIPTION} aria-describedby={errors.description ? "description-error" : undefined} aria-invalid={errors.description ? "true" : undefined}>{values.description}</textarea>
+          {errors.description && <p class="field-error" id="description-error">{errors.description}</p>}
+        </div>
+
+        <button class="button button-primary" type="submit">Submit ticket</button>
+      </form>
+    </main>
+    <script>
+      // Progressive enhancement only: the form works with JS disabled (a
+      // plain POST + redirect), this just gives a submitting state instead
+      // of a button that looks clickable while the request is in flight.
+      const form = document.querySelector("form");
+      form?.addEventListener("submit", () => {
+        const button = form.querySelector("button[type=submit]");
+        if (button instanceof HTMLButtonElement) {
+          button.disabled = true;
+          button.textContent = "Submitting…";
+        }
+      });
+    </script>
+  </body>
+</html>

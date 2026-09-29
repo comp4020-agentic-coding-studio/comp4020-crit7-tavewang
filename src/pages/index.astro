@@ -1,8 +1,24 @@
 ---
-import { listMessages } from "../lib/db";
+import SiteNav from "../components/SiteNav.astro";
+import StatusBadge from "../components/StatusBadge.astro";
+import { countTicketsByStatus, listTickets } from "../lib/db";
+import { CATEGORY_LABELS, STATUS_LABELS } from "../lib/labels";
+import { TICKET_CATEGORIES, TICKET_STATUSES, type TicketCategory, type TicketStatus } from "../lib/schema";
 import "../styles.css";
 
-const messages = listMessages();
+const url = new URL(Astro.request.url);
+const statusParam = url.searchParams.get("status");
+const categoryParam = url.searchParams.get("category");
+const search = url.searchParams.get("q")?.trim() ?? "";
+
+const status = TICKET_STATUSES.includes(statusParam as TicketStatus) ? (statusParam as TicketStatus) : undefined;
+const category = TICKET_CATEGORIES.includes(categoryParam as TicketCategory)
+  ? (categoryParam as TicketCategory)
+  : undefined;
+
+const counts = countTicketsByStatus();
+const total = counts.submitted + counts.in_progress + counts.resolved;
+const tickets = listTickets({ status, category, search: search || undefined });
 ---
 
 <!doctype html>
@@ -10,44 +26,99 @@ const messages = listMessages();
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>COMP4020 prototype</title>
+    <title>ANU Fix — report and track campus facility issues</title>
   </head>
   <body>
-    <nav aria-label="site">
-      <a href="/">Guestbook</a>
-      <a href="/readme/">About</a>
-    </nav>
+    <SiteNav />
     <main>
-      <h1>Guestbook</h1>
-      <p>
-        A minimal full-stack starter: messages live in SQLite on the machine's
-        volume (state survives a reload and a redeploy), and new messages
-        appear in every open tab over a server-sent-events stream — open this
-        page twice and sign it in one. Replace all of this with your own
-        prototype.
-      </p>
-      <form method="post" action="/api/messages">
-        <label for="body">Leave a message</label>
-        <input id="body" name="body" required maxlength="500" />
-        <button>Sign</button>
-      </form>
-      <ul id="messages">
-        {messages.map((message) => <li>{message.body}</li>)}
-      </ul>
+      <section class="hero">
+        <h1>ANU Fix</h1>
+        <p>
+          Spotted a broken light, a leaking tap, or a chair that's had enough? Report it and
+          watch it move from <em>submitted</em> to <em>in progress</em> to <em>resolved</em>.
+        </p>
+        <a class="button button-primary" href="/report">Report an issue</a>
+      </section>
+
+      <section class="stats" aria-label="ticket status summary">
+        <div class="stat">
+          <span class="stat-count">{total}</span>
+          <span class="stat-label">Total</span>
+        </div>
+        {
+          TICKET_STATUSES.map((s) => (
+            <div class="stat">
+              <span class="stat-count">{counts[s]}</span>
+              <span class="stat-label">{STATUS_LABELS[s]}</span>
+            </div>
+          ))
+        }
+      </section>
+
+      <section aria-label="filter tickets">
+        <form method="get" action="/" class="filters">
+          <div class="field">
+            <label for="q">Search</label>
+            <input id="q" name="q" type="search" placeholder="Title or location" value={search} />
+          </div>
+          <div class="field">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+              <option value="">All statuses</option>
+              {
+                TICKET_STATUSES.map((s) => (
+                  <option value={s} selected={s === status}>
+                    {STATUS_LABELS[s]}
+                  </option>
+                ))
+              }
+            </select>
+          </div>
+          <div class="field">
+            <label for="category">Category</label>
+            <select id="category" name="category">
+              <option value="">All categories</option>
+              {
+                TICKET_CATEGORIES.map((c) => (
+                  <option value={c} selected={c === category}>
+                    {CATEGORY_LABELS[c]}
+                  </option>
+                ))
+              }
+            </select>
+          </div>
+          <button class="button" type="submit">Apply</button>
+          {(status || category || search) && <a class="button-link" href="/">Clear</a>}
+        </form>
+      </section>
+
+      <section aria-label="ticket list">
+        {
+          tickets.length === 0 ? (
+            <p class="empty-state">
+              {total === 0
+                ? "No tickets yet — be the first to report an issue."
+                : "No tickets match those filters."}
+            </p>
+          ) : (
+            <ul class="ticket-list">
+              {tickets.map((ticket) => (
+                <li class="ticket-card">
+                  <a href={`/tickets/${ticket.id}`} class="ticket-title">
+                    {ticket.title}
+                  </a>
+                  <div class="ticket-meta">
+                    <span>{ticket.location}{ticket.room ? ` · Room ${ticket.room}` : ""}</span>
+                    <span>{CATEGORY_LABELS[ticket.category as TicketCategory]}</span>
+                    <span>{new Date(ticket.createdAt).toLocaleString("en-AU")}</span>
+                  </div>
+                  <StatusBadge status={ticket.status as TicketStatus} />
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </section>
     </main>
-    <script>
-      // The live half of the demo: subscribe to the SSE stream and prepend
-      // messages as they arrive. The form itself needs none of this — its
-      // POST + redirect re-renders the submitting tab from SQLite; this
-      // stream is how every other tab finds out.
-      const list = document.querySelector("#messages");
-      const source = new EventSource("/api/events");
-      source.addEventListener("message", (event) => {
-        const message = JSON.parse(event.data);
-        const item = document.createElement("li");
-        item.textContent = message.body;
-        list?.prepend(item);
-      });
-    </script>
   </body>
 </html>
